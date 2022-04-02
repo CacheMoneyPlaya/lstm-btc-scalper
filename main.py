@@ -22,10 +22,11 @@ from sklearn.preprocessing import MinMaxScaler
 #from scipy.stats import kurtosis,skew
 #from scipy import stats
 import yfinance as yf
+import tensorflow as tf
 
-#from keras.models import Sequential
-#from keras.layers import LSTM
-#from keras.layers import Dense
+from keras.models import Sequential
+from keras.layers import LSTM
+from keras.layers import Dense
 
 #Get the data and push into dataframe, resetting index as a standard list
 pair = 'BTC-USD'
@@ -53,11 +54,12 @@ def split_sequence(sequence, n_steps):
 	return array(X), array(y)
 
 
-# define input sequence
+# define input sequence being log returns
 raw_seq = train['log_return']
 
 # choose a number of time steps
 n_steps = 5
+
 # split into samples
 X, y = split_sequence(raw_seq, n_steps)
 
@@ -66,6 +68,37 @@ scaled_train = scaler.fit_transform(X)
 scaler_y = MinMaxScaler()
 scaled_y = scaler_y.fit_transform(y.reshape(-1,1))
 
+X,y = scaled_train, scaled_y
 
-print(scaled_train)
+# Push the items into
+	# [
+	# 	[
+	# 		[1],[2],[3],[4],[5]
+	# 	],
+	# ]
 
+n_features = 1
+X = X.reshape((X.shape[0], X.shape[1], n_features))
+
+
+tf.config.run_functions_eagerly(True)
+
+# Define the model
+
+model = Sequential()
+model.add(LSTM(100, activation='swish', input_shape=(n_steps, n_features), return_sequences=True))
+model.add(LSTM(50, activation = 'swish'))
+model.add(Dense(1))
+model.compile(optimizer='adam', loss='mse', metrics = 'mse')
+
+print('RUNNING MODEL FIT')
+model.fit(X,y,epochs=100)
+
+
+print('RUNNING MODEL PREDICTION')
+pred = model.predict(X)
+
+print('DONE')
+
+print(pred[:5])
+print(y[:5])
