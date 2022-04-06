@@ -27,12 +27,14 @@ import tensorflow as tf
 from keras.models import Sequential
 from keras.layers import LSTM
 from keras.layers import Dense
+from keras.models import model_from_json
+from keras.models import load_model
 
 #Get the data and push into dataframe, resetting index as a standard list
 pair = 'BTC-USD'
 data = yf.download(tickers=pair, period="7d", interval="1m")
 data['log_return'] = np.log1p(data['Close'].pct_change())
-data = data.dropna(subset=['log_return'])
+data = data.dropna(subset=['Close'])
 data.reset_index(inplace=True)
 train, test = train_test_split(data, test_size=0.2, shuffle=False)
 sns.lineplot(x=train['Datetime'], y=train['Close'], data=train, palette=['green'])
@@ -55,7 +57,7 @@ def split_sequence(sequence, n_steps):
 
 
 # define input sequence being log returns
-raw_seq = train['log_return']
+raw_seq = train['Close']
 
 # choose a number of time steps
 n_steps = 5
@@ -94,6 +96,12 @@ model.compile(optimizer='adam', loss='mse', metrics = 'mse')
 print('RUNNING MODEL FIT')
 model.fit(X,y,epochs=100)
 
+model_json = model.to_json()
+
+with open("model_num.json", "w") as json_file:
+	json_file.write(model_json)
+
+model.save_weights("model_num.h5")
 
 print('RUNNING MODEL PREDICTION')
 pred = model.predict(X)
