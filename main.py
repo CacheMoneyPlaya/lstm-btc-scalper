@@ -29,6 +29,8 @@ from keras.layers import LSTM
 from keras.layers import Dense
 from keras.models import model_from_json
 from keras.models import load_model
+from os.path import exists
+
 
 #Get the data and push into dataframe, resetting index as a standard list
 pair = 'BTC-USD'
@@ -85,23 +87,26 @@ X = X.reshape((X.shape[0], X.shape[1], n_features))
 
 tf.config.run_functions_eagerly(True)
 
-# Define the model
 
-model = Sequential()
-model.add(LSTM(100, activation='swish', input_shape=(n_steps, n_features), return_sequences=True))
-model.add(LSTM(50, activation = 'swish'))
-model.add(Dense(1))
-model.compile(optimizer='adam', loss='mse', metrics = 'mse')
+if not exists('model_save'):
+	# Define the model
+	print('DEFINING MODEL')
+	model = Sequential()
+	model.add(LSTM(100, activation='swish', input_shape=(n_steps, n_features), return_sequences=True))
+	model.add(LSTM(50, activation = 'swish'))
+	model.add(Dense(1))
+	model.compile(optimizer='adam', loss='mse', metrics = 'mse')
+	print('RUNNING MODEL TRAIN')
+	model.fit(X,y,epochs=100)
+	model_json = model.to_json()
 
-print('RUNNING MODEL FIT')
-model.fit(X,y,epochs=100)
+	with open("model_num.json", "w") as json_file:
+		json_file.write(model_json)
 
-model_json = model.to_json()
-
-with open("model_num.json", "w") as json_file:
-	json_file.write(model_json)
-
-model.save_weights("model_num.h5")
+	model.save("model_save")
+else:
+	print('LOADING EXISTING DATA')
+	model = load_model('model_save')
 
 print('RUNNING MODEL PREDICTION')
 pred = model.predict(X)
