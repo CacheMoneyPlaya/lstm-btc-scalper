@@ -1,48 +1,34 @@
-# Get historical BTC data
-
-# Push into dataframe
-
-# Grab closes and normalize data, potentially standardize instead
-
-# Break data into two groupings, groups of 5 sequences of close price + expected 6th
-
-# Create LSTM model
-
-# Run training data against 85% of the dataframe
-
-# Run the model against the remaining 15% and plot all data vs predicted last 15%
-
-import pandas as pd
 import numpy as np
-from numpy import array
-import matplotlib.pyplot as plt
-import seaborn as sns
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import MinMaxScaler
-#from scipy.stats import kurtosis,skew
-#from scipy import stats
+import pandas as pd
 import yfinance as yf
+import seaborn as sns
+from numpy import array
 import tensorflow as tf
-
-from keras.models import Sequential
+from os.path import exists
 from keras.layers import LSTM
 from keras.layers import Dense
-from keras.models import model_from_json
+import matplotlib.pyplot as plt
 from keras.models import load_model
-from os.path import exists
+from keras.models import Sequential
+from keras.models import model_from_json
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.model_selection import train_test_split
+
+test = None
+train = None
+model = None
+
+def build_data_sets():
+	global test, train
+	pair = 'BTC-USD'
+	data = yf.download(tickers=pair, period="7d", interval="1m")
+	data['log_return'] = np.log1p(data['Close'].pct_change())
+	data = data.dropna(subset=['Close'])
+	data.reset_index(inplace=True)
+	train, test = train_test_split(data, test_size=0.2, shuffle=False)
 
 
-#Get the data and push into dataframe, resetting index as a standard list
-pair = 'BTC-USD'
-data = yf.download(tickers=pair, period="7d", interval="1m")
-data['log_return'] = np.log1p(data['Close'].pct_change())
-data = data.dropna(subset=['Close'])
-data.reset_index(inplace=True)
-train, test = train_test_split(data, test_size=0.2, shuffle=False)
-# sns.lineplot(x=train['Datetime'], y=train['Close'], data=train, palette=['green'])
-# sns.lineplot(x=test['Datetime'], y=test['Close'], data=test, palette=['red'])
 
-# split a univariate sequence into samples
 def split_sequence(sequence, n_steps):
 	X, y = list(), list()
 	for i in range(len(sequence)):
@@ -57,111 +43,50 @@ def split_sequence(sequence, n_steps):
 		y.append(seq_y)
 	return array(X), array(y)
 
+def build_model():
+	global model
+	if not exists('model_save'):
+		model = Sequential()
+		model.add(LSTM(100, activation='swish', input_shape=(n_steps, n_features), return_sequences=True))
+		model.add(LSTM(50, activation = 'swish'))
+		model.add(Dense(1))
+		model.compile(optimizer='adam', loss='mse', metrics = 'mse')
+		model.fit(X,y,epochs=100)
+		model_json = model.to_json()
 
-# define input sequence being log returns
-raw_seq = train['Close']
+		with open("model_num.json", "w") as json_file:
+			json_file.write(model_json)
 
-# choose a number of time steps
-n_steps = 5
-
-# split into samples
-X, y = split_sequence(raw_seq, n_steps)
-
-scaler = MinMaxScaler()
-scaled_train = scaler.fit_transform(X)
-scaler_y = MinMaxScaler()
-scaled_y = scaler_y.fit_transform(y.reshape(-1,1))
-test_y = y
-
-X,y = scaled_train, scaled_y
-
-# Push the items into
-	# [
-	# 	[
-	# 		[1],[2],[3],[4],[5]
-	# 	],
-	# ]
-
-n_features = 1
-X = X.reshape((X.shape[0], X.shape[1], n_features))
-
+		model.save("model_save")
+	else:
+		model = load_model('model_save')
 
 tf.config.run_functions_eagerly(True)
+build_data_sets()
+build_model()
 
 
-if not exists('model_save'):
-	# Define the model
-	print('DEFINING MODEL')
-	model = Sequential()
-	model.add(LSTM(100, activation='swish', input_shape=(n_steps, n_features), return_sequences=True))
-	model.add(LSTM(50, activation = 'swish'))
-	model.add(Dense(1))
-	model.compile(optimizer='adam', loss='mse', metrics = 'mse')
-	print('RUNNING MODEL TRAIN')
-	model.fit(X,y,epochs=100)
-	model_json = model.to_json()
-
-	with open("model_num.json", "w") as json_file:
-		json_file.write(model_json)
-
-	model.save("model_save")
-else:
-	print('LOADING EXISTING DATA')
-	model = load_model('model_save')
-
-print('RUNNING MODEL PREDICTION')
-# pred = model.predict(X)
-
-
-#y will contain each value of n[0]+5 shifted
-#pred will contain ~ what y should be in each segment
-
-# ------------------------------------------------
-# define input sequence being log returns
-raw_seq = test['Close']
-
-# choose a number of time steps
-n_steps = 5
-
-# split into samples
-X, y = split_sequence(raw_seq, n_steps)
-
+fiveHTest = test['Close'][:500]
+tests = np.array(fiveHTest).reshape(-1,1)
 scaler = MinMaxScaler()
-scaled_test = scaler.fit_transform(X)
-scaler_y = MinMaxScaler()
-scaled_y = scaler_y.fit_transform(y.reshape(-1,1))
+scaledFirst500 = scaler.fit_transform(tests)
+date = test['Datetime'][:500]
 
-X,y = scaled_test, scaled_y
+track = []
+first5 = scaledFirst500[:5]
 
-# Push the items into
-	# [
-	# 	[
-	# 		[1],[2],[3],[4],[5]
-	# 	],
-	# ]
+for i, x in enumerate(scaledFirst500):
+	# Reshape
+	X = first5.reshape((1, 5, 1))
+	# predict
+	pred = model.predict(X)
+	# push prediction into payload
+	first5 = np.append(first5, pred[0])
+	# push removed value to track i.e. calcd values
+	track.append(first5[0])
+	# delete first from paylaod
+	first5 = np.delete(first5, 0)
 
-n_features = 1
-X = X.reshape((X.shape[0], X.shape[1], n_features))
-# ---------------------------------------------
-
-
-pred = model.predict(X)
-
-inverse_pred = scaler_y.inverse_transform(pred);
-
-inverse_y = scaler_y.inverse_transform(y);
-
-
-# sns.lineplot(data = inverse_y)
-# sns.lineplot(data = inverse_pred, palette = ['orange'])
-# plt.legend(labels = ['Test', 'Predicted'], loc = 'best', fontsize = 'large')
-# plt.xticks(np.arange(len(y),step=50),test['Datetime'].index)
-# plt.xlabel('Date', fontsize=5)
-# plt.ylabel('Price', fontsize=5)
-# plt.show()
-date = test['Datetime'][6:]
-
-fig, ax = plt.subplots()
-ax.plot_date(date, inverse_y, '-b')
-ax.plot_date(date, inverse_pred, '-r')
+ax.plot_date(date, scaledFirst500, '-b')
+ax.plot_date(date, track, '-r')
 plt.show()
